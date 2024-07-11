@@ -1,14 +1,20 @@
 package com.pierre.planner.trip;
 
-import com.pierre.planner.participant.*;
+import com.pierre.planner.activity.ActivityData;
+import com.pierre.planner.activity.ActivityRequestPayload;
+import com.pierre.planner.activity.ActivityResponse;
+import com.pierre.planner.exception.ValidationException;
+import com.pierre.planner.participant.ParticipantCreateResponse;
+import com.pierre.planner.participant.ParticipantData;
+import com.pierre.planner.participant.ParticipantRequestPayload;
+import com.pierre.planner.link.LinkData;
+import com.pierre.planner.link.LinkRequestPayload;
+import com.pierre.planner.link.LinkResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -16,94 +22,84 @@ import java.util.UUID;
 public class TripController {
 
     @Autowired
-    private TripRepository tripRepository;
-
-    @Autowired
-    private ParticipantService participantService;
+    private TripService tripService;
 
     @PostMapping
-    public ResponseEntity<TripCreateResponse> createTrip(@RequestBody TripRequestPayload payload){
-
-        Trip newTrip = new Trip(payload);
-
-        this.tripRepository.save(newTrip);
-
-        this.participantService.registerParticipantsToEvent(payload.emails_to_invite(), newTrip);
-
+    public ResponseEntity<TripCreateResponse> createTrip(@RequestBody TripRequestPayload payload) {
+        Trip newTrip = tripService.createTrip(payload);
         return ResponseEntity.ok(new TripCreateResponse(newTrip.getId()));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Trip> getTripDetails(@PathVariable UUID id){
-
-        Optional<Trip> trip = this.tripRepository.findById(id);
-
-        return trip.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    public ResponseEntity<Trip> getTripDetails(@PathVariable UUID id) {
+        return tripService.getTripDetails(id).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Trip> updateTrip(@PathVariable UUID id, @RequestBody TripRequestPayload payload){
-
-        Optional<Trip> trip = this.tripRepository.findById(id);
-
-        if(trip.isPresent()){
-
-            Trip rawTrip = trip.get();
-            rawTrip.setStartsAt(LocalDateTime.parse(payload.starts_at(), DateTimeFormatter.ISO_DATE_TIME));
-            rawTrip.setEndsAt(LocalDateTime.parse(payload.ends_at(), DateTimeFormatter.ISO_DATE_TIME));
-            rawTrip.setDestination(payload.destination());
-
-            this.tripRepository.save(rawTrip);
-
-            return ResponseEntity.ok(rawTrip);
+    public ResponseEntity<Trip> updateTrip(@PathVariable UUID id, @RequestBody TripRequestPayload payload) {
+        try {
+            Trip updatedTrip = tripService.updateTrip(id, payload);
+            return ResponseEntity.ok(updatedTrip);
+        } catch (ValidationException e) {
+            return ResponseEntity.notFound().build();
         }
-
-        return ResponseEntity.notFound().build();
     }
 
     @GetMapping("/{id}/confirm")
-    public ResponseEntity<Trip> getConfirmTrip(@PathVariable UUID id){
-
-        Optional<Trip> trip = this.tripRepository.findById(id);
-
-        if(trip.isPresent()){
-
-            Trip rawTrip = trip.get();
-            rawTrip.setIsConfirmed(true);
-
-            this.tripRepository.save(rawTrip);
-            this.participantService.triggerConfirmationEmailToParticipants(id);
-
-            return ResponseEntity.ok(rawTrip);
+    public ResponseEntity<Trip> getConfirmTrip(@PathVariable UUID id) {
+        try {
+            Trip confirmedTrip = tripService.confirmTrip(id);
+            return ResponseEntity.ok(confirmedTrip);
+        } catch (ValidationException e) {
+            return ResponseEntity.notFound().build();
         }
-
-        return ResponseEntity.notFound().build();
     }
 
-    @PostMapping("/{id}/invite")
-    public ResponseEntity<ParticipantCreateResponse> inviteParticipants(@PathVariable UUID id, @RequestBody ParticipantRequestPayload payload){
+    @GetMapping("/{id}/activities")
+    public ResponseEntity<List<ActivityData>> getAllActivities(@PathVariable UUID id) {
+        List<ActivityData> activityList = tripService.getAllActivities(id);
+        return ResponseEntity.ok(activityList);
+    }
 
-        Optional<Trip> trip = this.tripRepository.findById(id);
-
-        if(trip.isPresent()){
-
-            Trip rawTrip = trip.get();
-
-            ParticipantCreateResponse participantResponse = this.participantService.registerParticipantToEvent(payload.email(), rawTrip);
-
-            if(rawTrip.getIsConfirmed()) this.participantService.triggerConfirmationEmailToParticipant(payload.email());
-
-            return ResponseEntity.ok(participantResponse);
+    @PostMapping("/{id}/activities")
+    public ResponseEntity<ActivityResponse> registerActivity(@PathVariable UUID id, @RequestBody ActivityRequestPayload payload) {
+        try {
+            ActivityResponse activityResponse = tripService.registerActivity(id, payload);
+            return ResponseEntity.ok(activityResponse);
+        } catch (ValidationException e) {
+            return ResponseEntity.notFound().build();
         }
-
-        return ResponseEntity.notFound().build();
     }
 
     @GetMapping("/{id}/participants")
-    public ResponseEntity<List<ParticipantData>> getAllParticipants(@PathVariable UUID id){
-
-        List<ParticipantData> participantList = this.participantService.getAllParticipantsFromTrip(id);
-
+    public ResponseEntity<List<ParticipantData>> getAllParticipants(@PathVariable UUID id) {
+        List<ParticipantData> participantList = tripService.getAllParticipants(id);
         return ResponseEntity.ok(participantList);
+    }
+
+    @PostMapping("/{id}/invite")
+    public ResponseEntity<ParticipantCreateResponse> inviteParticipants(@PathVariable UUID id, @RequestBody ParticipantRequestPayload payload) {
+        try {
+            ParticipantCreateResponse participantResponse = tripService.inviteParticipants(id, payload);
+            return ResponseEntity.ok(participantResponse);
+        } catch (ValidationException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @GetMapping("/{id}/links")
+    public ResponseEntity<List<LinkData>> getAllLinks(@PathVariable UUID id) {
+        List<LinkData> linkList = tripService.getAllLinks(id);
+        return ResponseEntity.ok(linkList);
+    }
+
+    @PostMapping("/{id}/links")
+    public ResponseEntity<LinkResponse> registerLink(@PathVariable UUID id, @RequestBody LinkRequestPayload payload) {
+        try {
+            LinkResponse linkResponse = tripService.registerLink(id, payload);
+            return ResponseEntity.ok(linkResponse);
+        } catch (ValidationException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 }
